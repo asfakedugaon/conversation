@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../viewmodel/chat_viewmodel.dart';
@@ -17,18 +19,30 @@ class ChatHomePage extends StatefulWidget {
 }
 
 class _ChatHomePageState extends State<ChatHomePage> {
+
   final uId=FirebaseAuth.instance.currentUser?.uid;
   ScrollController controller = ScrollController();
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    var uid= FirebaseAuth.instance.currentUser?.uid ??"";
-    Future.delayed(Duration(seconds: 2),() async{
-      var viewModel = Provider.of<ChatViewModel>(context, listen: false);
-      var chatRoomId = await viewModel.getChatList(cid: uid, otherId: widget.otherUid);
-    },);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ChatViewModel>().getChatList(cid: uId ?? "", otherId: widget.otherUid);
+    });
   }
+
+  Future<void> _pickImage() async {
+    try {
+      final image = await _picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        context.read<ChatViewModel>().sendImage(otherUid: widget.otherUid, imagePath: image.path);
+      }
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     var viewModel = Provider.of<ChatViewModel>(context,listen: false);
@@ -55,45 +69,42 @@ class _ChatHomePageState extends State<ChatHomePage> {
                   itemCount: value.chatList.length,
                   itemBuilder: (context, index) {
                     var user = value.chatList[index];
-                    if (user.message_type.toString() == "image") {
-                      return Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: user.senderId == uId
-                              ? Align(
-                              alignment: Alignment.topRight,
-                              child: Image.network("${user.photo_url}",  height: 150, width: 150,))
-                              : Align(
-                              alignment: Alignment.topLeft,
-                              child: Image.network("${user.photo_url}", height: 100, width: 100,))
-                      );
-
-                    }else {
                       bool isSender = user.senderId == uId;
-                      return Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Align(
-                              alignment: isSender
-                                  ? Alignment.topRight
-                                  : Alignment.topLeft,
-                              child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 10),
-                                  decoration: BoxDecoration(
-                                      color: isSender
-                                          ? Colors.green[200]
-                                          : Colors.grey[300],
-                                      borderRadius: BorderRadius.only(
-                                          topLeft: Radius.circular(10),
-                                          bottomLeft: Radius.circular(10),
-                                          bottomRight: Radius.circular(10)
-                                      )
-                                  ),
-                                  child: Text(
-                                    "${user.message}",
-                                    style: TextStyle(color: Colors.black),
-                                  ))));
+                      final formatedTime = user.dateTime != null
+                    ? DateFormat('hh:mm a').format(user.dateTime!): 'No Time';
+
+                    return Align(
+                      alignment: isSender ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Column(
+                        crossAxisAlignment: isSender ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          if (user.isImage && user.imageUrl != null)
+                            Image.asset(user.imageUrl!, height: 100, width: 100, fit: BoxFit.cover)
+                          else
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              constraints: BoxConstraints(
+                                maxWidth: MediaQuery.of(context).size.width * 0.7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSender ? Colors.orange.shade400 : Colors.grey.shade200,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: const Radius.circular(16),
+                                  topRight: const Radius.circular(16),
+                                  bottomLeft: Radius.circular(isSender ? 16 : 4),
+                                  bottomRight: Radius.circular(isSender ? 4 : 16),
+                                ),
+                              ),
+                              child: Text("${user.message}",
+                                style: TextStyle(color: isSender ? Colors.white : Colors.black87),
+                              ),
+                            ),
+                          const SizedBox(height: 4),
+                          Text(formatedTime, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        ],
+                      ),
+                    );
                     }
-                  },
                 );
               },
             ),
@@ -102,16 +113,36 @@ class _ChatHomePageState extends State<ChatHomePage> {
               height: 110,
               child: Row(
                 children: [
-                  Expanded(child: TextField(
-                    controller: viewModel.chatController,
-                    decoration: InputDecoration(hintText: "massage",border: OutlineInputBorder(borderRadius: BorderRadius.circular(20))),
-                  )),
-                  IconButton(onPressed: () {
-                    viewModel.sendChat(otherUid: widget.otherUid);
-                    Future.delayed(Duration(milliseconds: 500),() {
-                      controller.jumpTo(controller.position.maxScrollExtent);
-                    });
-                  }, icon: Icon(Icons.send))
+                  IconButton(icon: Icon(Icons.photo), onPressed: _pickImage),
+                  Expanded(
+                    child: TextField(
+                      controller: viewModel.chatController,
+                      maxLines: null,
+                      decoration: InputDecoration(
+                        hintText: viewModel.chatHint,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(25),
+                          borderSide: const BorderSide(color: Colors.grey),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                SizedBox(width: 10,),
+                GestureDetector(
+                  onTap: () {
+                    if(viewModel.chatController.text.trim().isNotEmpty) {
+                      viewModel.sendChat(otherUid: widget.otherUid);
+                    }
+                  },
+                  child: CircleAvatar(
+                    radius: 25,
+                    backgroundColor: Colors.green.shade400,
+                    child: Icon(Icons.send, color: Colors.white,),
+                  ),
+                )
                 ],
               ),
             )

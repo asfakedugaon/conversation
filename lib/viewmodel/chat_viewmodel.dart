@@ -1,9 +1,9 @@
-import 'dart:ffi';
+import 'dart:io';
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/material.dart';
-
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/cupertino.dart';
 import '../model/chat_model.dart';
 import '../model/user_model.dart';
 
@@ -14,49 +14,76 @@ class ChatViewModel with ChangeNotifier {
   var chatList = <ChatModel>[];
   var userList = <UserModel>[];
   var uid = FirebaseAuth.instance.currentUser?.uid ?? "";
-  String otherUId = "";
 
-  getChatList({required String cid, required String otherId}) {
+  void getChatList({required String cid, required String otherId}) {
     var chatId = getChatId(cid: cid, otherId: otherId);
 
-    DatabaseReference starCountRef =
-    FirebaseDatabase.instance.ref('messages/$chatId');
-    starCountRef.orderByChild("dateTime").onValue.listen((DatabaseEvent event) {
+    FirebaseDatabase.instance.ref('messages/$chatId').onValue.listen((event) {
       chatList.clear();
-      var data = event.snapshot.children;
-      data.forEach(
-            (element) {
-          var chat = ChatModel(
-              senderId: element.child("sender_id").value.toString(),
-              receiverId: element.child("receiver_id").value.toString(),
-              message: element.child("message").value.toString(),
-              status: element.child("status").value.toString(),
-            message_type: element.child("message_type").value.toString(),
-            photo_url: element.child("photo_url").value.toString(),
-          );
-          chatList.add(chat);
-        },
-      );
+      for (var element in event.snapshot.children) {
+        var chat = ChatModel(
+          senderId: element.child("senderId").value.toString(),
+          receiverId: element.child("receiverId").value.toString(),
+          message: element.child("message").value.toString(),
+          status: element.child("status").value.toString(),
+          dateTime: element.child("dateTime").value != null
+              ? DateTime.parse(element.child("dateTime").value.toString())
+              : null,
+        );
+        chatList.add(chat);
+      }
       notifyListeners();
     });
   }
 
-  sendChat({required String otherUid}) async {
-    var cid = uid.toString();
-    var chatId = getChatId(otherId: otherUid, cid: cid);
-    var randomId = generateRandomString(40);
-    DatabaseReference starCountRef =
-        FirebaseDatabase.instance.ref('messages/$chatId');
+  void sendChat({required String otherUid}) {
+    var chatId = getChatId(cid: uid, otherId: otherUid);
+    var timestamp = DateTime.now().toIso8601String();
 
-    //sent, seen, unseen
-    await starCountRef.child(randomId).set(ChatModel(
-            message: chatController.text.toString(),
-            senderId: "$uid",
-            receiverId: otherUid,
-            status: "sent")
-        .toJson());
+    var chatMessage = {
+      'senderId': uid,
+      'receiverId': otherUid,
+      'message': chatController.text,
+      'status': 'sent',
+      'dateTime': timestamp,
+      'isImage': false,
+      'imageUrl': null,
+    };
+
+    FirebaseDatabase.instance.ref('messages/$chatId').push().set(chatMessage);
+
     chatController.clear();
     notifyListeners();
+  }
+
+  Future<void> sendImage({required String otherUid, required String imagePath}) async {
+    try {
+      var chatId = getChatId(cid: uid, otherId: otherUid);
+      var timestamp = DateTime.now().toIso8601String();
+
+
+      String fileName = "chat_images/${generateRandomString(10)}.jpg";
+      UploadTask uploadTask = FirebaseStorage.instance
+          .ref(fileName)
+          .putFile(File(imagePath));
+
+      TaskSnapshot snapshot = await uploadTask;
+      String imageUrl = await snapshot.ref.getDownloadURL();
+
+      var chatMessage = {
+        'senderId': uid,
+        'receiverId': otherUid,
+        'message': "",
+        'status': 'sent',
+        'dateTime': timestamp,
+        'isImage': true,
+        'imageUrl': imageUrl,
+      };
+
+      FirebaseDatabase.instance.ref('messages/$chatId').push().set(chatMessage);
+    } catch (e) {
+      print("Error sending image: $e");
+    }
   }
 
   String generateRandomString(int len) {
@@ -64,20 +91,17 @@ class ChatViewModel with ChangeNotifier {
     const _chars = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz1234567890';
     return List.generate(len, (index) => _chars[r.nextInt(_chars.length)]).join();
   }
-  getUserList() {
-    DatabaseReference starCountRef = FirebaseDatabase.instance.ref('users');
-    starCountRef.onValue.listen((DatabaseEvent event) {
-      var data = event.snapshot.children;
+  void getUserList() {
+    FirebaseDatabase.instance.ref('users').onValue.listen((event) {
       userList.clear();
-      data.forEach(
-            (element) {
-          var user = UserModel(
-              name: element.child("name").value.toString(),
-              email: element.child("email").value.toString(),
-              id: element.child("id").value.toString());
-          userList.add(user);
-        },
-      );
+      for (var element in event.snapshot.children) {
+        var user = UserModel(
+          id: element.child("id").value.toString(),
+          name: element.child("name").value.toString(),
+          email: element.child("email").value.toString(),
+        );
+        userList.add(user);
+      }
       notifyListeners();
     });
   }

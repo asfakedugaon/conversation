@@ -56,13 +56,11 @@ class UserViewModel with ChangeNotifier{
         isLoading = false;
         notifyListeners();
       }
-
     }
     else{
       Fluttertoast.showToast(msg: "Please fill the all field");
     }
   }
-
   // userLogin//
   void userLogin(BuildContext context) async{
     var email= emailController.text;
@@ -84,14 +82,12 @@ class UserViewModel with ChangeNotifier{
       Fluttertoast.showToast(msg: "Please fill the all filed");
     }
   }
-
   // logout user//
   void logoutUser(BuildContext context) async{
     await auth.signOut();
     Fluttertoast.showToast(msg: "logOut User");
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => LoginPage(),));
   }
-
 //user view code//
 
   Future<void> fetchUserData(String uid) async {
@@ -115,5 +111,4 @@ class UserViewModel with ChangeNotifier{
       notifyListeners();
     }
     }
-
 }
